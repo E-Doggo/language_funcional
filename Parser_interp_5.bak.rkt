@@ -17,14 +17,14 @@
 (deftype Expr
   [num n]                                 ; <num>
   [bool b]                                ; <bool>
-  [add l r]                               ; (+ <F1WAE> <F1WAE>)
-  [sub l r]                               ; (- <F1WAE> <F1WAE>)
+  [add l r]                               ; (+ <FAE> <FAE>)
+  [sub l r]                               ; (- <FAE> <FAE>)
   [gt l r]
   [lt l r]
-  [if-tf c et ef]                         ; (if-tf <F1WAE> <F1WAE> <F1WAE>)
-  [with id-name named-expr body-expr]     ; (with <id> <F1WAE> <F1WAE>)
+  [if-tf c et ef]                         ; (if-tf <FAE> <FAE> <FAE>)
+  ;[with id-name named-expr body-expr]     ; (with <id> <FAE> <FAE>)
   [id name]                               ; <id> 
-  [app fname arg-expr]                    ; (app <id> <F1WAE>)
+  [app fname arg-expr]                    ; (app <id> <FAE>)
   [fun arg body]
   [prim name args]
 )
@@ -38,7 +38,8 @@
   
 (deftype Val
   (valV v)
-  (closureV arg body env)
+  (closureV arg body env) ;closure = fun + env
+  (promiseV expr env) ;promise = expr + env
   )
 
 #|
@@ -76,7 +77,7 @@
     [(list 'gt l r) (gt (parse l) (parse r))]
     [(list 'lt l r) (lt (parse l) (parse r))]
     [(list 'if-tf c et ef) (if-tf (parse c) (parse et) (parse ef))]
-    [(list 'with (list id-name named-exp) body) (with id-name (parse named-exp) (parse body))]
+    [(list 'with (list id-name named-exp) body) (app (fun id-name (parse body)) (parse named-exp))]
     [(list 'fun (list x) body) (fun x (parse body))]
     [(list f arg) (app (parse f) (parse arg))]
     [(cons prim-name args)(prim prim-name (map parse args))]
@@ -97,20 +98,22 @@
     [(num n) (valV n)]
     [(bool b) (valV b)]
     [(id x) (env-lookup x env)]; busca el valor de x en env
-    [(add l r) (valV+ (interp l env) (interp r env))]
-    [(sub l r) (valV- (interp l env) (interp r env))]
-    [(gt l r) (> (interp l env) (interp r env))]
-    [(lt l r) (< (interp l env) (interp r env))]
-    [(prim prim-name args)(prim-ops prim-name (map (λ (x) (interp x env))args))]
-    [(if-tf c et ef) (if (interp c env)(interp et env)(interp ef env))]
-    [(with x e b)
-     (interp b (extend-env x (interp e env) env))]
-    [(fun x body) expr]
+    [(add l r) (valV+ (strict (interp l env)) (strict (interp r env)))]
+    [(sub l r) (valV- (strict (interp l env)) (strict (interp r env)))]
+    [(gt l r) (> (strict (interp l env)) (strict (interp r env)))]
+    [(lt l r) (< (strict (interp l env)) (strict (interp r env)))]
+    [(prim prim-name args)(prim-ops prim-name (map (λ (x) (strict (interp x env))) args))]
+    [(if-tf c et ef) (if (strict (interp c env))(strict (interp et env))(strict (interp ef env)))]
+    #|[(with x e b)
+     (interp b (extend-env x (interp e env) env))]|#
+    [(fun x body) (closureV x body env)]
 
     [(app f e)
-     (def (closureV arg body fenv) (interp f env))
+     (def (closureV arg body fenv) (strict (interp f env)))
      ;(interp body fundefs(extend-env arg (interp e fundefs env) env)); scope dinamico
-     (interp body(extend-env arg (interp e env) fenv)) ;scope statico
+     (interp body(extend-env arg 
+                             (promiseV e env)
+                             fenv)) ;scope statico
      ]
 ))
 
@@ -123,17 +126,36 @@
   (valV (- (valV-v s1) (valV-v s2)))
   )
 
+;strict -> Val (valV/closureV/promiseV) -> Val(Valv/closureV)
+;destructor de promesas o cumplidor de promesas
+(define (strict val)
+  (match val
+    [(promiseV expr env)
+     (begin
+       (def interp-val (strict (inter expr env)))
+       (printf "Forcing: ~a~n: " interp-val)
+       interp-val)]
+    [else val]
+    )
+  )
+
+
 ; run: Src list<fundef>? -> Expr
 ; corre un programa
 (define (run prog)
   (let ([res (interp (parse prog) empty-env)])
-    (match res
+    ;Un posible solucion
+    ;interp env ...
+    (match (strict res)
       [(valV v) v]
       [(closureV arg body env) res]
+      ;[(promiseV expr env) (interp expr env)]
       ))
   )
 
-(run '{+ 3 4})
+;(run '{with {x 3} {with {y {+ 2 x}} {+ x y}}})
+;(run '(with (x 3) (+ x 4)))
+;(run '(lt 5 2))
 (test (run '{- 5 1}) 4)
 
 (test (run '{if-tf #t {+ 1 1} {- 1 1}}) 2)
@@ -146,6 +168,7 @@
 (test (run '{if-tf {lt 1 2} #t #f}) #t)
 (test (run '{if-tf {gt 1 2} #t #f}) #f)
 
+
 (test (run '{with {x 3} 2}) 2)
 (test (run '{with {x 3} x}) 3)
 (test (run '{with {x 3} {with {y 4} x}}) 3)
@@ -157,7 +180,9 @@
 (test (run '{with {x 3} {with {y {+ 2 x}} {+ x y}}}) 8)
 (test (run '{with {x 3} {if-tf {+ x 1} {+ x 3} {+ x 9}}}) 6)
 
+
 #|
+
 (test/exn (run '{f 10}) "undefined function")
 (test (run '{f 10} (list '{define {f x} {+ x x}})) 20)
 (test (run '{add1 {add1 {add1 10}}} (list '{define {add1 x} {+ x 1}})) 13)
