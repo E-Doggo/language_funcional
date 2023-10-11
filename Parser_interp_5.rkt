@@ -132,7 +132,7 @@
   (match val
     [(promiseV expr env)
      (begin
-       (def interp-val (strict (inter expr env)))
+       (def interp-val (strict (interp expr env)))
        (printf "Forcing: ~a~n: " interp-val)
        interp-val)]
     [else val]
@@ -180,6 +180,10 @@
 (test (run '{with {x 3} {with {y {+ 2 x}} {+ x y}}}) 8)
 (test (run '{with {x 3} {if-tf {+ x 1} {+ x 3} {+ x 9}}}) 6)
 
+(run '{with {z {+ 2 2}}
+              {with {y {+ z z}}
+                    {with {x {+ y y}}
+                          {+ x x}}}})
 
 #|
 
