@@ -39,7 +39,7 @@
 (deftype Val
   (valV v)
   (closureV arg body env) ;closure = fun + env
-  (promiseV expr env) ;promise = expr + env
+  (promiseV expr env cache) ;promise = expr + env
   )
 
 #|
@@ -112,7 +112,7 @@
      (def (closureV arg body fenv) (strict (interp f env)))
      ;(interp body fundefs(extend-env arg (interp e fundefs env) env)); scope dinamico
      (interp body(extend-env arg 
-                             (promiseV e env)
+                             (promiseV e env (box #f))
                              fenv)) ;scope statico
      ]
 ))
@@ -130,11 +130,17 @@
 ;destructor de promesas o cumplidor de promesas
 (define (strict val)
   (match val
-    [(promiseV expr env)
-     (begin
-       (def interp-val (strict (interp expr env)))
-       (printf "Forcing: ~a~n: " interp-val)
-       interp-val)]
+    [(promiseV expr env cache)
+     (if (unbox cache)
+         (begin
+           (printf "using cache value ~n")
+           (unbox cache)
+           )
+         (let ([interp-val (strict (interp expr env))])
+           (begin (set-box! cache interp-val)
+                  (printf "Forcing: ~a~n: " interp-val)
+                  interp-val))
+         )]
     [else val]
     )
   )
