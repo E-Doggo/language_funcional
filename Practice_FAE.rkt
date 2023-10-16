@@ -1,5 +1,14 @@
 #lang play
 (print-only-errors #f)
+
+#|
+----- Práctica # -----
+
+Estudiante: Rodrigo Guardia Ramirez
+
+Asignatura: Programación Funcional
+
+|#
 #|
 <FAE> ::= <num> | <bool>
         | (+ <FAE> <FAE>)
@@ -27,6 +36,8 @@
   [app fname arg-expr]                    ; (app <id> <FAE>)
   [fun arg body]
   [prim name args]
+  [string s]
+  [concat exprs]
 )
 
 (define primitives
@@ -42,6 +53,7 @@
         (cons '>= >=)
         (cons 'and  (λ (h t) (and  h t)))
         (cons 'or (λ (h t) (or  h t)))
+        (cons 'string string-append)
         )
   )
 
@@ -89,6 +101,8 @@
     [(list 'with (list id-name named-exp) body) (app (fun id-name (parse body)) (parse named-exp))]
     [(list 'fun (list x) body) (fun x (parse body))]
     [(list f arg) (app (parse f) (parse arg))]
+    [(list 'string s) (string s)]
+    [(list 'concat exprs) (concat (map parse exprs))] 
     [(cons prim-name args)(prim prim-name (map parse args))]
     )
   )
@@ -107,6 +121,7 @@
     [(num n) (valV n)]
     [(bool b) (valV b)]
     [(id x) (env-lookup x env)]; busca el valor de x en env
+    [(string s) (valV s)]
     [(prim prim-name args)(prim-ops prim-name (map (λ (x) (strict (interp x env))) args))]
     [(if-tf c et ef) (if (strict (interp c env))(strict (interp et env))(strict (interp ef env)))]
     [(fun x body) (closureV x body env)]
@@ -117,17 +132,53 @@
                              (promiseV e env (box #f))
                              fenv)) ;scope statico
      ]
+    [(concat exprs) (valV (string-append (map (λ (x) (strict (interp x env))) exprs)))]
 ))
 
-
-(define (constant-folding expr)
+(define (search-for-ids expr)
   (match expr
-    [(prim prim-name args)(prim-ops prim-name (map (λ (x) (strict (interp x mtEnv))) args))]
-    [(id x) (expr)]
-    [(app f e) (constant-folding expr)]
-    [(cons h t) (cond [(empty? t)(expr)][(constant-folding (car expr))])]
+    [(cons (id x) tail) #f]
+    [(cons head tail) (and #t (search-for-ids tail))]
+    ['() #t]
+    
     )
   )
+
+;Discutido y apoyado por Chris Rivero:
+(define (constant-folding expr)
+  (match expr
+    [(num n) (num n)]
+    [(bool b) (bool b)]
+    [(id x) (id x)]
+    [(prim prim-name args) (if (search-for-ids args)
+                               (parse (valV-v (interp (prim prim-name args) mtEnv)))
+                               (prim prim-name (map constant-folding args))
+                               )]
+    [(if-tf c et ef) (if-tf (constant-folding c)
+                         (constant-folding et)
+                         (constant-folding ef))]
+    [(fun arg body) (fun  arg (constant-folding body))] 
+    [(app f e)
+     (app (constant-folding f) (constant-folding e))]
+    )
+  )
+
+;Llegue hasta donde pude
+(define (constant-propagation expr)
+  (match expr
+    [(num n) (num n)]
+    [(bool b) (bool b)]
+    [(id x) (id x)]
+    [(cons h t)  (parse (valV-v (interp h mtEnv)))  (parse (valV-v (interp (car t) mtEnv)))]
+    [(fun arg body) (fun  arg (constant-propagation body))] 
+    [(app f e)
+     (app (constant-propagation f) (constant-propagation e))]
+    [(prim prim-name args) (constant-propagation args)]
+    )
+  )
+
+
+
 
 ; valV :valV valV -> vale
 (define (valV+ s1 s2)
@@ -212,6 +263,15 @@
 (test (constant-folding (parse'{{fun {x} {+ x {* 2 4}}} {+ 5 5}}))
       (parse '{{fun {x} {+ x 8}} 10}))
 
+
+(test (constant-propagation
+   (parse '{with {x 3} {+ x x}})) (parse '{with {x 3} {+ 3 3}}))
+(test (constant-propagation
+   (parse '{with {x 3} {with {y 5} {+ x y}}})) (parse '{with {x 3} {with {y 5} {+ 3 5}}}))
+(test (constant-propagation
+   (parse '{with {x 3} {with {y 5} {+ z z}}})) (parse '{with {x 3} {with {y 5} {+ z z}}}))
+
+;(run '{string "Hello, " "World!"}) "Hello, World!"
 
 #|
 
