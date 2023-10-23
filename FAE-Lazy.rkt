@@ -69,26 +69,28 @@ withN( (n 2) (m 3) (p 4) (+ n m p))
     [(? symbol?) (id src)]
     [(list '+ s1 s2) (add (parse s1) (parse s2))]
     [(list '- s1 s2) (sub (parse s1) (parse s2))]
+    ;[(add )]
     [(list 'if-tf c et ef) (if-tf (parse c) (parse et) (parse ef))]
     [(list 'with (list x e) b) (app (fun x (parse b)) (parse e))]
-    [(list arg e) (app (parse arg) (parse e))]; 2. Subir de nivel nuestras funcione
-    
-    
-    [(list 'fun args body) (parse-sugar args body)] ; 1. Agregar el caso del fun
+    [(list arg e) (app  (parse arg) (parse e))]
+    [(list 'fun args body) (parse-fun args body)]
+    ;[(fun arg body) body]
     )
   )
 
-(define (parse-sugar args body)
-  (match args
-    ['() (parse body)] ; Default to a single argument if none specified
-    [(cons h t) (fun h (parse-sugar t body))]
+(define (parse-fun args body)
+  (cond
+    [(null? args) (fun '() (parse body))]
+    [(list? args) (match args
+                    [(list arg) (fun arg (parse body))]
+                    [(cons h t) (parse(fun h (parse-fun t body)))])]
     )
   )
 
 (deftype Val
   (valV v) ; numero, booleano, string, byte, etc.
   (closureV arg body env) ; closure = fun + env
-  (promiseV expr env cache) ; promise = expr-L + env + cache
+  (promiseV expr env) ; promise = expr-L + env
   )
 
 ; interp :: Expr  Env -> Val
@@ -109,7 +111,7 @@ withN( (n 2) (m 3) (p 4) (+ n m p))
      (def (closureV arg body fenv) (strict (interp f env))) ; Esto permite encontrar (fun 'x (add (id 'x) (id 'x))) por ejemplo y tomar arg y body
     
      (interp body (extend-env arg
-                              (promiseV e env (box #f)) ; lazy eval
+                              (promiseV e env) ; lazy eval
                               ;(interp e env) ; eager eval
                               fenv)) ; parece que no funciona ni con estatico ni dinamico
      ]
@@ -128,17 +130,7 @@ withN( (n 2) (m 3) (p 4) (+ n m p))
 ; destructor de promesas - cumplidor de promesas
 (define (strict val)
   (match val
-    [(promiseV e env cache)
-     (if (unbox cache)
-         (begin
-           (printf "Using cached value~n")
-           (unbox cache)
-           )
-         (let ([interp-val (strict (interp e env))])
-           (begin (set-box! cache interp-val)
-                  (printf "Forcing: ~a~n " interp-val)
-                  interp-val))
-         )]
+    [(promiseV e env) (strict (interp e env))]
     [else val]
     )
   )
@@ -151,6 +143,7 @@ withN( (n 2) (m 3) (p 4) (+ n m p))
     (match (strict res)
       [(valV v) v]
       [(closureV arg body env) res])
+    
       ;[(promiseV e env) (interp e env)])
     )
   )
@@ -183,31 +176,6 @@ withN( (n 2) (m 3) (p 4) (+ n m p))
 ;(test (run '{add1 {add1 {add1 10}}}(list '{define {add1 x} {+ x 1}})) 13)
 (test (run '{with {add1 {fun {x} {+ x 1}}}{add1 {add1 {add1 10}}}}) 13)
 
-
-#|
-(run '{foo 10}(list '{define {add1 x} {+ x 1}}
-                    '{define {foo x} {+ {add1 x} {add1 x}}}))
-
-
-En este caso , las funciones ya han dejado de ser visibles para todos por lo que ejecutar esto
-resultara en un error. sin embargo, se puede enviar la funcion como argumento
-
-; Prueba fallida
-(test (run '{with {add1 {fun {x} {+ x 1}}}
-                  {with {foo {fun {x} {+ {add1 x} {add1 x}}}}
-                        {foo 10}}}) 22)
-
-(test (run '{with {add1 {fun {x} {+ x 1}}}
-                  {with {foo {fun {f} {+ {f 10} {f 10}}}}
-                        {foo add1}}}) 22)
-
-
-; Pruebas para casos basicos
-(test (run '{{fun {x}{+ x 1}} {+ 2 3}}) 6)
-(test (run '{with {apply10 {fun {f} {f 10}}}
-                  {with {add1 {fun {x} {+ x 1}}}
-                        {apply10 add1}}}) 11)
-|#
 
 ; Prueba fallida
 (test (run '{with {add1 {fun {x} {+ x 1}}}
@@ -242,22 +210,26 @@ Sin embargo, la currificacion falla en la implementacion actual.
 (test (run '{with {x 3} {with {y x} y}}) 3)
 (test (run '{with {x 3} {with {y {+ x x}} y}}) 6)
 
-
-(run '{with {z {+ 2 2}}
-              {with {y {+ z z}}
-                    {with {x {+ y y}}
-                          {+ x x}}}})
-
-
-
-;
-(run '{{fun (a) {+ a 2}} 3})
-;(run '{{fun (a b) {+ a b}} {3 2}})
-;(run '{{fun (a b c) {+ a {- b c}}} {3 2 1}})
-
 (test (run '{{fun (a) {+ a 2}} 3}) 5)
+
+(test (run '{with {addN {fun {n}
+                   {fun {x} {+ x n}}}}
+        {{addN 10} 20}}) 30)
+
+
 (test (run '{{fun (a b) {+ a b}} {3 2}}) 5)
 (test (run '{{fun (a b c) {+ a {- b c}}} {3 2 1}}) 4)
+(run '{{fun (a b) {+ a b}} {3 2}})
+
+(run '{with {addN {fun {a}
+                       {fun {b} {+ a b}}}}
+            {{addN 2} 1}})
+
+(run '{{{fun {a} {fun {b} {+ a b}}} 2} 1})
+
+
+
+
 
 
 
