@@ -1,5 +1,6 @@
 #lang play
 (print-only-errors #f) ; Para ver solo los errores.
+; YFAE-> Non-Mutation Recursion, Functions, Arithmetic, Expressions
 
 #|
 <FAE> ::=   <num> | <bool> | <id>
@@ -21,8 +22,8 @@
   [mult l r]
   [zero n]
   [if-tf c et ef]                         ; (if-tf <FAE> <FAE> <FAE>)
-  [with id-name named-expr body-expr]     ; (with <id> <FAE> <FAE>)
-  [rec id-name named-expr body-expr ]
+  ;[with id-name named-expr body-expr]     ; (with <id> <FAE> <FAE>)
+  
   [id name]                               ; <id> 
   [app fname arg-expr]                    ; (app <FAE> <FAE>) ; ahora podemos aplicar una funcion a otra
   [fun arg body]                          ; (fun <id> <FAE>) ; mantenemos el <id> como el nombre del argumento
@@ -36,7 +37,7 @@
 (deftype Env
   (mtEnv)
   (aEnv id val env)
-  (aRecEnv id b-val env)
+  
   )
 
 ; empty-env -> (mtEnv)
@@ -50,7 +51,7 @@
   (match env
     [(mtEnv) (error "undefined: " x)]
     [(aEnv id val tail)(if (eq? id x) val (env-lookup x tail))]
-    [(aRecEnv id val tail)(if (eq? id x) (unbox val) (env-lookup x tail))]
+    
     )
   )
 
@@ -66,8 +67,8 @@
     [(list '* s1 s2) (mult (parse s1) (parse s2))]
     [(list 'zero?? n) (zero (parse n))]
     [(list 'if-tf c et ef) (if-tf (parse c) (parse et) (parse ef))]
-    [(list 'with (list x e) b) (with x (parse e) (parse b))]
-    [(list 'rec (list x e) b) (rec x (parse e) (parse b))]
+    [(list 'with (list x e) b) (app (fun x (parse b)) (parse e))]
+    [(list 'rec (list x e) b)(parse `{with {,x {Y {fun {,x} ,e}}} ,b})]
     [(list arg e) (app (parse arg) (parse e))]; 2. Subir de nivel nuestras funciones
     [(list 'fun (list arg) body) (fun arg (parse body))] ; 1. Agregar el caso del fun
     )
@@ -93,7 +94,7 @@
     [(if-tf c et ef) (if (valV-v (interp c env))
                          (interp et env)
                          (interp ef env))]
-    [(with x e b) (interp b (extend-env x (interp e env) env))] ; Si asociamos una funcion a una variable, la funcion entra al env
+    ;[(with x e b) (interp b (extend-env x (interp e env) env))] ; Si asociamos una funcion a una variable, la funcion entra al env
     [(fun arg body) (closureV arg body env)] ; Por ahora, devolvemos la misma expresion que nos llego
     [(app f e)
      (def (closureV arg body fenv) (interp f env)) ; Esto permite encontrar (fun 'x (add (id 'x) (id 'x))) por ejemplo y tomar arg y body
@@ -102,20 +103,9 @@
 
 
 
-     [(rec x ne b) (interp b (cyclic-env x ne env))]
+     
   
 ))
-; cyclic-env: ..... -> Env
-(define (cyclic-env id ne env)
-  ; 1 -> crear un ambiente temporal , incompeto y asociarlo A
-  (def box-val (box #f))
-  (def new-env (aRecEnv id box-val env))
-  ; 2 -> interp ne en el ambiente temporal
-  (def clos-val (interp ne new-env))
-  ; 3 -> actualizar el ambiente temporal por el ambiente ciclico.
-  (set-box! box-val clos-val)
-  new-env
-  )
 
 ; valV+ : Val -> Val
 (define (valV+ s1 s2)
@@ -133,10 +123,15 @@
 (define (zeroV n)
   (valV (eq? 0 (valV-v n))))
 
-; run: Src -> Src
-; corre un programa
+;({fun {f} {with {h {fun {g} {fun {n} {{f {g g}} n}}}} {h h}}})
+
+;Add Y to the default-environment
+(define (Y-combinator arg func enviroment)
+  (extend-env arg (interp func enviroment) enviroment))
+
+; run: Src -> Src; corre un programa
 (define (run prog)
-  (let ([res (interp (parse prog) empty-env)])
+  (let ([res (interp (parse prog) (Y-combinator 'Y (parse '{fun {f} {with {h {fun {g} {fun {n} {{f {g g}} n}}}} {h h}}}) empty-env))])
     (match res
       [(valV v) v]
       [(closureV arg body env) res])
@@ -192,38 +187,9 @@
                        {fun {x} {+ x n}}}}
             {{addN 10} 20}}) 30)
 
-
-
-(run '{rec {sum {fun {n}
-                      {if-tf {zero?? n}
-                             0
-                             {+ n {sum {- n 1}}}
-                             }
-                      }
-                 }
-            {sum 6}
-            })
-
-(run '{rec {sum {fun {n}
-                      {if-tf {zero?? n}
-                             0
-                             {+ n {sum {- n 1}}}
-                             }
-                      }
-                 }
-            {sum 6}
-            })
-
-
-(run '{rec {mult {fun {n}
-                      {if-tf {zero?? n}
-                             1
-                             {* n {mult {- n 1}}}
-                             }
-                      }
-                 }
-            {mult 6}
-            })
+(test (run '{rec {addN {fun {n}
+                       {fun {x} {+ x n}}}}
+            {{addN 10} 20}}) 30)
 
 (run '{with {sum {fun {sum}
                       {fun {n}
@@ -244,4 +210,32 @@
                                     0
                                     {+ n {sum {- n 1}}}}}}}}
               {sum 10}}})
-                        
+
+
+(test (run '{rec {sum {fun {n}
+                        {if-tf {zero?? n} 0 {+ n {sum {- n 1}}}}}} {sum 0}})0)
+
+(test (run '{rec {sum {fun {n}
+                        {if-tf {zero?? n} 0 {+ n {sum {- n 1}}}}}} {sum 3}})6)
+
+(test (run '{rec {mult {fun {n}
+                      {if-tf {zero?? n}
+                             1
+                             {* n {mult {- n 1}}}
+                             }
+                      }
+                 }
+            {mult 6}
+            })720)
+
+(test (run '{rec {mult {fun {n}
+                      {if-tf {zero?? n}
+                             0
+                             {- n {mult {- n 1}}}
+                             }
+                      }
+                 }
+            {mult 10}
+            })5)
+
+(run 'Y)

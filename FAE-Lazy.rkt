@@ -62,6 +62,7 @@ withN( (n 2) (m 3) (p 4) (+ n m p))
 
 ; parse: Src -> Expr
 ; parsea codigo fuente
+
 (define (parse src)
   (match src
     [(? number?) (num src)]
@@ -73,11 +74,13 @@ withN( (n 2) (m 3) (p 4) (+ n m p))
     [(list 'if-tf c et ef) (if-tf (parse c) (parse et) (parse ef))]
     [(list 'with (list x e) b) (app (fun x (parse b)) (parse e))]
     [(list arg e) (app  (parse arg) (parse e))]
+    ;Debatido con Cesar Mendez
     [(list 'fun args body) (parse-fun args body)]
-    ;[(fun arg body) body]
+    [(fun arg body) body]
     )
   )
 
+;Debatido con Cesar Mendez
 (define (parse-fun args body)
   (cond
     [(null? args) (fun '() (parse body))]
