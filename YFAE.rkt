@@ -3,6 +3,14 @@
 ; YFAE-> Non-Mutation Recursion, Functions, Arithmetic, Expressions
 
 #|
+Práctica 4 - FAE-Y (Segunda parte)
+
+Nombre: Rodrigo Guardia Ramirez
+
+Asignatura: Programación Funcional
+|#
+
+#|
 <FAE> ::=   <num> | <bool> | <id>
             | (+ <FAE> <FAE>)
             | (- <FAE> <FAE>)
