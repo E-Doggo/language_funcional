@@ -225,6 +225,8 @@ Sin embargo, la currificacion falla en la implementacion actual.
 (test (run '{{fun (a b c) {+ a {- b c}}} {3 2 1}}) 4)
 (run '{{fun (a b) {+ a b}} {3 2}})
 
+(test (run '{{fun (a 2) {+ a 3}} {+ 3 2}}) 7)
+
 (run '{with {addN {fun {a}
                        {fun {b} {+ a b}}}}
             {{addN 2} 1}})
