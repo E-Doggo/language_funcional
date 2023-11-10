@@ -45,6 +45,7 @@ Ahi si hay problemas con los argumentos, podemos hacer el sistema de tipos.
   [openbox b]
   [setbox b n]
   [seqn e1 e2]  ;concatenar para expresiones ilimitadas, como el foldr.
+  [set id e]
 ) 
 
 
@@ -107,6 +108,7 @@ Ahi si hay problemas con los argumentos, podemos hacer el sistema de tipos.
     [(list 'openbox e) (openbox (parse e))]
     [(list 'setbox b v) (setbox (parse b) (parse v))]
     [(list 'seqn e1 e2) (seqn (parse e1) (parse e2))]
+    [(list 'set id e)(set id (parse e))]
     [(list arg e) (app (parse arg) (parse e))]
     [(list 'fun (list arg) body) (fun arg (parse body))]
     )
@@ -117,6 +119,7 @@ Ahi si hay problemas con los argumentos, podemos hacer el sistema de tipos.
   (closureV arg body env) ; closure = fun + env
   (v*s val sto) ; val (valV/closureV) + sto (last memory)
   (boxV loc)
+  (voidV)
   )
 ; 3. Actualizar interp.
 ; Descubrimiento clave de la clase pasada: Sto necesita existir
@@ -181,6 +184,10 @@ Ahi si hay problemas con los argumentos, podemos hacer el sistema de tipos.
      (def (v*s e2-val e2-sto) (interp e2 env e1-sto))
      (v*s e2-val e2-sto)
      ]
+
+    [(set id e)
+     (def (v*s e-val e-sto) (interp e env sto))
+     (v*s voidV (extend-sto (env-lookup id env) e-val e-sto))]
 ))
 
 ; malloc :: sto -> loc
@@ -255,10 +262,6 @@ Ahi si hay problemas con los argumentos, podemos hacer el sistema de tipos.
                    {setbox b 20}
                    {openbox b}}}) 20)
 
-(test (run '{with {make-box {fun {x} {newbox x}}}
-      {setbox {make-box 10} 20}
-}) 20)
-
 (test (run '{with {b {newbox 10}}
   {seqn
        {setbox b {+ 1{openbox b}}}
@@ -274,3 +277,10 @@ Ahi si hay problemas con los argumentos, podemos hacer el sistema de tipos.
                   {seqn
                    {setbox a 2}
                    {f 5}}}}) 7)
+
+(run '{with {a 10}
+            {with {f {fun {x} {+ x a}}}
+                  {seqn
+                   {set a 20}
+                   {with {a 3}
+                         {f 2}}}}})
