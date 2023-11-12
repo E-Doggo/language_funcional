@@ -44,7 +44,7 @@ Ahi si hay problemas con los argumentos, podemos hacer el sistema de tipos.
   [newbox b]
   [openbox b]
   [setbox b n]
-  [seqn e1 e2]  ;concatenar para expresiones ilimitadas, como el foldr.
+  [seqn h t]  ;concatenar para expresiones ilimitadas, como el foldr con seqn y '().
   [set id e]
 ) 
 
@@ -86,12 +86,38 @@ Ahi si hay problemas con los argumentos, podemos hacer el sistema de tipos.
   )
 
 (define empty-sto (mtSto))
+
 (define extend-sto aSto)
+
+(define (delete-sto l sto)
+   (match sto
+    [(mtSto) sto]
+    [(aSto loc val tail) (if (eq? l loc) tail (aSto loc val (delete-sto l tail)))]
+    )
+  )
+
 (define (sto-lookup l sto)
   (match sto
     [(mtSto) (error "segmentation fault: " l)]
     [(aSto loc val tail) (if (eq? l loc) val (sto-lookup l tail))]
     )
+  )
+#|
+    (seqn e1 e2 e3 e4)
+    (seqn e1 (parse-seqn e2 e3 e4))
+    (seqn e1 (seqn e2 (parse-seqn e3 e4)))
+    (seqn e1 (seqn e2 (seqn e3 e4))))
+
+    
+    (seqn e1 (seqn e2 e3)))
+    (seqn e1 (seqn e2 (seqn e3 e4))))
+    (seqn e1 (seqn e2 (seqn e3 (seqn e4 e5))))
+|#
+(define (parse-seqn args)
+  (cond
+    [(empty? (cdr args)) (parse (car args))]
+    [(list? args)(seqn (parse (car args)) (parse-seqn (cdr args)))]
+  )
   )
 
 ; parse: Src -> Expr; parsea codigo fuente
@@ -107,7 +133,16 @@ Ahi si hay problemas con los argumentos, podemos hacer el sistema de tipos.
     [(list 'newbox b) (newbox (parse b))]
     [(list 'openbox e) (openbox (parse e))]
     [(list 'setbox b v) (setbox (parse b) (parse v))]
-    [(list 'seqn e1 e2) (seqn (parse e1) (parse e2))]
+    ;(seqn e1 e2)
+    ;(seqn e1 e2 e3)
+    ;(seqn e1 e2 e3 e4)
+    [(list 'seqn h ...) (parse-seqn h)]
+    #|
+    (seqn e1 e2)
+    (seqn e1 (seqn e2 e3)))
+    (seqn e1 (seqn e2 (seqn e3 e4))))
+    (seqn e1 (seqn e2 (seqn e3 (seqn e4 e5))))
+    |#
     [(list 'set id e)(set id (parse e))]
     [(list arg e) (app (parse arg) (parse e))]
     [(list 'fun (list arg) body) (fun arg (parse body))]
@@ -132,12 +167,13 @@ Ahi si hay problemas con los argumentos, podemos hacer el sistema de tipos.
     [(fun arg body) (v*s (closureV arg body env) sto)]
     [(id x) (v*s (sto-lookup (env-lookup x env) sto) sto)] ; 7. Actualizar la busqueda de variables
     [(add l r) ; 8. Actualizar operaciones
-     ; 1. Evaluar l con el sto actual
-     (def (v*s l-val l-sto) (interp l env sto))
-     ; 2. Evaluar r con el sto modificado por l
-     (def (v*s r-val r-sto) (interp r env l-sto))
+     ; 1. Evaluar r con el sto actual
+     (def (v*s r-val r-sto) (interp r env sto))
+     ; 2. Evaluar l con el sto modificado por l
+     (def (v*s l-val l-sto) (interp l env r-sto))
      ; 3. Evaluar la suma
-     (v*s (valV+ l-val r-val) r-sto)]
+     (v*s (valV+ l-val r-val) l-sto)]
+   
     
     [(sub l r) ; 1. Evaluar l con el sto actual
      (def (v*s l-val l-sto) (interp l env sto))
@@ -164,10 +200,12 @@ Ahi si hay problemas con los argumentos, podemos hacer el sistema de tipos.
      (v*s (sto-lookup (boxV-loc b-val) b-sto) b-sto)
      ]
 
+    ;Ejercicio 3 Apoyo de Chris Rivero, Debatido con Cesar mendez
     [(setbox b n)
       (def (v*s (boxV loc) b-sto) (interp b env sto))
       (def (v*s n-val n-sto) (interp n env b-sto))
-      (v*s (boxV loc) (extend-sto loc n-val n-sto))]
+      (def new-storage (delete-sto loc n-sto))
+      (v*s (boxV loc) (extend-sto loc n-val new-storage))]
     
     ; 9. Actualizar la aplicacion de funcion
     [(app f e) ; f -> fun-expr & e -> arg-expr
@@ -195,7 +233,7 @@ Ahi si hay problemas con los argumentos, podemos hacer el sistema de tipos.
 (define (malloc sto)
   (match sto
     [(mtSto) 0]
-    [(aSto loc _ tail) (+ 1 (malloc tail))] ; usamos longitud de sto. 
+    [(aSto loc _ tail) (+ 1 (malloc tail))] ; usamos longitud de sto.
     )
   )
 
@@ -286,8 +324,33 @@ Ahi si hay problemas con los argumentos, podemos hacer el sistema de tipos.
                          {f 2}}}}})
 
 
+
+; On left to right the awnser would be 32 due to first opening box when the value is 10 in sto and then opening the box after its been set to 22
+; Making the operation + 10 22
+#|
 (test (run '{with {b {newbox 10}}
   {seqn
        {setbox b {+ {openbox b} {openbox {setbox b 22}}}}
        {openbox b}}
 }) 32)
+|#
+
+; Meanwhile, on right to left the awnser would be 44 due to first opening the box after its been set to 22 on sto and then opening it once again 
+; Making the operation + 22 22
+(test (run '{with {b {newbox 10}}
+  {seqn
+       {setbox b {+ {openbox b} {openbox {setbox b 22}}}}
+       {openbox b}}
+}) 44)
+
+
+;TEST CON SEQN N
+(run '{with {b {newbox 10}}
+                  {seqn
+                   {setbox b 20}
+                   {setbox b 30}
+                   {openbox {setbox b {+ 3 5}}}
+                   {setbox b 45}
+                   {openbox b}
+                   }})
+
