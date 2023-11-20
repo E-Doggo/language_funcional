@@ -10,6 +10,7 @@
             | (app <FAE> <FAE>) ; puedo aplicar una funcion a otra funcion / puedo usar una funcion como argumento. 
             | (fun <id> <FAE>) ; fun(que es una lambda) nombre-arg body
             ; cajas mutables
+            | (refun <id> <FAE>)
             | (newbox <expr>)
             | (setbox <expr> <expr>)
             | (openbox <expr>)
@@ -41,11 +42,14 @@ Ahi si hay problemas con los argumentos, podemos hacer el sistema de tipos.
   [id name]                               ; <id> 
   [app fname arg-expr]                    ; (app <FAE> <FAE>) ; ahora podemos aplicar una funcion a otra
   [fun arg body]                          ; (fun <id> <FAE>) ; mantenemos el <id> como el nombre del argumento
+  [refun arg body]
   [newbox b]
   [openbox b]
   [setbox b n]
   [seqn e1 e2]  ;concatenar para expresiones ilimitadas, como el foldr.
   [set id e]
+
+  
 ) 
 
 
@@ -111,12 +115,14 @@ Ahi si hay problemas con los argumentos, podemos hacer el sistema de tipos.
     [(list 'set id e)(set id (parse e))]
     [(list arg e) (app (parse arg) (parse e))]
     [(list 'fun (list arg) body) (fun arg (parse body))]
+    [(list 'refun (list arg) body) (refun arg (parse body))]
     )
   )
 ; 4. Incluir un nuevo tipo de valor v*s
 (deftype Val
   (valV v) ; numero, booleano, string, byte, etc.
   (closureV arg body env) ; closure = fun + env
+  (refClosureV arg body env) ; closure = fun + env
   (v*s val sto) ; val (valV/closureV) + sto (last memory)
   (boxV loc)
   (voidV)
@@ -130,6 +136,7 @@ Ahi si hay problemas con los argumentos, podemos hacer el sistema de tipos.
     [(num n) (v*s (valV n) sto)] ; 6. Actualizar valores basicos
     [(bool b) (v*s (valV b) sto)]
     [(fun arg body) (v*s (closureV arg body env) sto)]
+    [(refun arg body) (v*s (refClosureV arg body env) sto)]
     [(id x) (v*s (sto-lookup (env-lookup x env) sto) sto)] ; 7. Actualizar la busqueda de variables
     [(add l r) ; 8. Actualizar operaciones
      ; 1. Evaluar l con el sto actual
@@ -171,12 +178,24 @@ Ahi si hay problemas con los argumentos, podemos hacer el sistema de tipos.
     
     ; 9. Actualizar la aplicacion de funcion
     [(app f e) ; f -> fun-expr & e -> arg-expr
-     (def (v*s (closureV arg body fenv) fun-sto) (interp f env sto))
-     (def (v*s arg-val arg-sto) (interp e env fun-sto))
-     (def new-loc (malloc arg-sto))
-     (interp body
+     (def (v*s fun-val fun-sto) (interp f env sto))
+     (match fun-val
+       ;Call by value
+       [(closureV arg body fenv)
+        (def (v*s arg-val arg-sto) (interp e env fun-sto))
+        (def new-loc (malloc arg-sto))
+        (interp body
              (extend-env arg new-loc fenv)
              (extend-sto new-loc arg-val arg-sto))]
+       ;Call by reference
+       [(refClosureV arg body fenv)
+        (def loc (env-lookup (id-name e) env))
+        (interp body
+             (extend-env arg loc fenv) fun-sto)
+        
+        ]
+       )
+]
     ;(interp body (extend-env (interp e env) env)
 
     [(seqn e1 e2)
@@ -291,3 +310,32 @@ Ahi si hay problemas con los argumentos, podemos hacer el sistema de tipos.
        {setbox b {+ {openbox b} {openbox {setbox b 22}}}}
        {openbox b}}
 }) 32)
+
+(run '{with {v 0}
+            {with {f {refun {x} {set x 5}}}
+                  {seqn {f v}
+                        v}}})
+
+(run '{with {swap {fun {a}
+                       {fun {b}
+                            {with {tmp a}
+                                  {seqn
+                                   {set a b}
+                                   {set b tmp}}}}}}
+            {with {a 10}
+                  {with {b 20}
+                  {seqn {{swap a} b}
+                        b}}
+            }})
+
+(run '{with {swap {refun {a}
+                       {refun {b}
+                            {with {tmp a}
+                                  {seqn
+                                   {set a b}
+                                   {set b tmp}}}}}}
+            {with {a 10}
+                  {with {b 20}
+                  {seqn {{swap a} b}
+                        b}}
+            }})

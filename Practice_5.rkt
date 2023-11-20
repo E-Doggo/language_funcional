@@ -1,5 +1,14 @@
 #lang play
 (print-only-errors #f) ; Para ver solo los errores.
+#|
+----- Práctica 5 -----
+
+Estudiante: Rodrigo Guardia Ramirez
+
+Asignatura: Programación Funcional
+|#
+
+
 
 #|
 <FAE> ::=   <num> | <bool> | <id>
